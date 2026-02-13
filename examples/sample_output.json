@@ -1,0 +1,52 @@
+{
+  "repo": "https://github.com/example/flask-api",
+  "files_analyzed": 12,
+  "total_lines": 850,
+  "languages": {
+    "Python": 92,
+    "HTML": 8
+  },
+  "score": 58,
+  "critical": [
+    {
+      "title": "SQL Injection Vulnerability",
+      "file": "app/routes.py",
+      "line": 47,
+      "code": "query = f\"SELECT * FROM users WHERE id = {request.args['id']}\"",
+      "risk": "User input directly interpolated into SQL query allows attackers to execute arbitrary SQL",
+      "fix": "Use parameterized queries",
+      "fix_code": "query = \"SELECT * FROM users WHERE id = ?\"\ncursor.execute(query, (request.args['id'],))"
+    },
+    {
+      "title": "Hardcoded Database Password",
+      "file": "config.py",
+      "line": 12,
+      "code": "DB_PASSWORD = \"admin123\"",
+      "risk": "Credentials exposed in source code",
+      "fix": "Use environment variables",
+      "fix_code": "DB_PASSWORD = os.getenv('DB_PASSWORD')"
+    }
+  ],
+  "warnings": [
+    {
+      "title": "Debug Mode Enabled",
+      "file": "app.py",
+      "line": 8,
+      "code": "app.run(debug=True)",
+      "issue": "Debug mode should be disabled in production",
+      "fix": "Use environment variable",
+      "fix_code": "app.run(debug=os.getenv('FLASK_DEBUG', False))"
+    }
+  ],
+  "improvements": [
+    {
+      "title": "Add Type Hints",
+      "file": "app/routes.py",
+      "line": 15,
+      "current": "def get_user(user_id):",
+      "suggested": "def get_user(user_id: int) -> dict:",
+      "benefit": "Improves code readability and enables static type checking"
+    }
+  ],
+  "summary": "Application has critical security vulnerabilities including SQL injection and exposed credentials that must be fixed before production deployment."
+}
