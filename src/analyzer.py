@@ -33,7 +33,7 @@ class CodeAnalyzer:
         total_lines = 0
         language_stats = {}
         
-        for f in files[:30]:
+        for f in files[:50]:
             rel_path = str(f.relative_to(repo_path))
             content = self.github.read_file(str(f))
             file_contents[rel_path] = content
