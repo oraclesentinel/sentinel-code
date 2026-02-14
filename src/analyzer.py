@@ -11,6 +11,68 @@ from github_utils import GitHubUtils
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+ANALYSIS_PROMPT = '''You are Sentinel Code, an AI-powered code analyzer. Analyze the provided codebase and generate a detailed security and quality report.
+
+## IMPORTANT RULES
+1. EVERY issue MUST have file path and line number
+2. EVERY issue MUST show the actual code snippet
+3. EVERY issue MUST have a concrete fix with code example
+4. Do NOT use vague descriptions
+5. Be SPECIFIC - list exact locations
+
+## OUTPUT FORMAT:
+
+ORACLE SENTINEL CODE REVIEW
+
+Repo: {repo_url}
+Language: <languages with percentages>
+Files analyzed: <count>
+
+---
+
+CRITICAL ISSUES (<count>)
+
+1. <Issue Title>
+   File: <path/file.py>:<line>
+   Code: <code snippet>
+   Risk: <what is dangerous>
+   Fix: <how to fix with code>
+
+(repeat for each critical issue, or "No critical issues found" if none)
+
+---
+
+WARNINGS (<count>)
+
+1. <Warning Title>
+   File: <path/file.py>:<line>
+   Code: <code snippet>
+   Issue: <problem>
+   Fix: <solution with code>
+
+(repeat for each warning)
+
+---
+
+IMPROVEMENTS (<count>)
+
+1. <Improvement Title>
+   File: <path/file.py>:<line>
+   Current: <current code>
+   Suggested: <improved code>
+   Benefit: <why better>
+
+(repeat for each improvement)
+
+---
+
+Now analyze this codebase:
+
+Repository: {repo_url}
+
+{files_content}
+'''
+
 class CodeAnalyzer:
     def __init__(self):
         self.github = GitHubUtils()
@@ -22,133 +84,54 @@ class CodeAnalyzer:
         files = self.github.get_file_list(repo_path)
         
         if not files:
-            return {
-                "error": "No code files found",
-                "score": 0,
-                "repo": repo_url
-            }
+            return {"error": "No code files found", "repo": repo_url}
         
-        # Read file contents
         file_contents = {}
         total_lines = 0
         language_stats = {}
         
-        for f in files[:50]:
+        for f in files[:30]:
             rel_path = str(f.relative_to(repo_path))
             content = self.github.read_file(str(f))
             file_contents[rel_path] = content
-            
             lines = content.count('\n')
             total_lines += lines
-            
             ext = f.suffix
             language_stats[ext] = language_stats.get(ext, 0) + lines
         
-        # Calculate language percentages
         languages = {}
         for ext, lines in language_stats.items():
             pct = round((lines / total_lines) * 100) if total_lines > 0 else 0
-            lang_name = self._ext_to_language(ext)
-            languages[lang_name] = pct
-        
+            languages[self._ext_to_language(ext)] = pct
         languages = dict(sorted(languages.items(), key=lambda x: x[1], reverse=True))
         
-        # AI Analysis
-        analysis = self._ai_analyze(file_contents, repo_url)
+        files_text = ""
+        for path, content in file_contents.items():
+            lines = content.split('\n')[:200]
+            files_text += f"\n\n=== FILE: {path} ===\n" + '\n'.join(lines)
         
-        # Build report
-        report = {
+        analysis = self._ai_analyze(files_text, repo_url)
+        
+        return {
             "repo": repo_url,
             "files_analyzed": len(file_contents),
             "total_lines": total_lines,
             "languages": languages,
-            "score": analysis.get("score", 50),
-            "critical": analysis.get("critical", []),
-            "warnings": analysis.get("warnings", []),
-            "improvements": analysis.get("improvements", []),
-            "summary": analysis.get("summary", "")
+            "analysis": analysis
         }
-        
-        return report
     
     def _ext_to_language(self, ext: str) -> str:
         mapping = {
-            '.py': 'Python',
-            '.js': 'JavaScript',
-            '.ts': 'TypeScript',
-            '.jsx': 'React JSX',
-            '.tsx': 'React TSX',
-            '.rs': 'Rust',
-            '.sol': 'Solidity',
-            '.go': 'Go',
-            '.java': 'Java',
-            '.cpp': 'C++',
-            '.c': 'C',
-            '.h': 'C Header',
-            '.rb': 'Ruby',
-            '.php': 'PHP',
+            '.py': 'Python', '.js': 'JavaScript', '.ts': 'TypeScript',
+            '.jsx': 'React JSX', '.tsx': 'React TSX', '.rs': 'Rust',
+            '.sol': 'Solidity', '.go': 'Go', '.java': 'Java',
+            '.cpp': 'C++', '.c': 'C', '.h': 'C Header',
         }
         return mapping.get(ext, ext)
     
-    def _ai_analyze(self, file_contents: dict, repo_url: str) -> dict:
-        """Send code to AI for analysis"""
+    def _ai_analyze(self, files_content: str, repo_url: str) -> str:
+        prompt = ANALYSIS_PROMPT.format(repo_url=repo_url, files_content=files_content)
         
-        files_text = ""
-        for path, content in file_contents.items():
-            files_text += f"\n\n=== FILE: {path} ===\n{content[:3000]}"
-        
-        prompt = f"""Analyze this codebase for security and quality issues.
-
-Repository: {repo_url}
-
-{files_text}
-
-Return a JSON object with this EXACT structure:
-{{
-    "score": <number 0-100>,
-    "critical": [
-        {{
-            "title": "Issue title",
-            "file": "path/to/file.py",
-            "line": 142,
-            "code": "problematic code snippet (max 3 lines)",
-            "risk": "What is dangerous about this",
-            "fix": "How to fix it",
-            "fix_code": "corrected code snippet"
-        }}
-    ],
-    "warnings": [
-        {{
-            "title": "Warning title",
-            "file": "path/to/file.py",
-            "line": 50,
-            "code": "code snippet",
-            "issue": "What is the problem",
-            "fix": "How to fix",
-            "fix_code": "fixed code"
-        }}
-    ],
-    "improvements": [
-        {{
-            "title": "Improvement title",
-            "file": "path/to/file.py",
-            "line": 20,
-            "current": "current code",
-            "suggested": "improved code",
-            "benefit": "Why this is better"
-        }}
-    ],
-    "summary": "Brief 1-2 sentence assessment"
-}}
-
-Focus on:
-1. Security: SQL injection, XSS, hardcoded secrets, auth issues
-2. Bugs: null pointers, race conditions, unhandled exceptions
-3. Quality: error handling, input validation, logging
-4. Improvements: type hints, documentation, tests
-
-Be specific with file paths and line numbers. Return ONLY valid JSON, no markdown."""
-
         try:
             response = requests.post(
                 OPENROUTER_URL,
@@ -159,31 +142,16 @@ Be specific with file paths and line numbers. Return ONLY valid JSON, no markdow
                 json={
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 4000,
-                    "temperature": 0.2
+                    "max_tokens": 16000,
+                    "temperature": 0.3
                 },
                 timeout=120
             )
             
             if response.status_code != 200:
-                print(f"AI API error: {response.status_code}")
-                return {"score": 50, "summary": "Analysis failed"}
+                return f"Analysis failed: {response.status_code}"
             
             data = response.json()
-            content = data['choices'][0]['message']['content']
-            
-            # Clean JSON
-            content = content.strip()
-            if content.startswith('```'):
-                content = content.split('\n', 1)[1]
-                content = content.rsplit('```', 1)[0]
-            
-            result = json.loads(content)
-            return result
-            
-        except json.JSONDecodeError as e:
-            print(f"JSON parse error: {e}")
-            return {"score": 50, "summary": "Failed to parse analysis"}
+            return data["choices"][0]["message"]["content"]
         except Exception as e:
-            print(f"AI analysis error: {e}")
-            return {"score": 50, "summary": f"Analysis error: {str(e)}"}
+            return f"Analysis error: {str(e)}"
