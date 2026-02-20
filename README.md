@@ -24,7 +24,7 @@ Sentinel Code is a specialized security scanner that uses AI to detect vulnerabi
 
 ## Try It
 
-Scan your repository now: [oraclesentinel.xyz/code](https://oraclesentinel.xyz/code)
+Scan your repository now: [code.oraclesentinel.xyz](https://code.oraclesentinel.xyz)
 
 ## Solana Vulnerability Detection
 
@@ -400,7 +400,7 @@ sentinel-code/
 ## Links
 
 - **Website:** [oraclesentinel.xyz](https://oraclesentinel.xyz)
-- **Sentinel Code:** [oraclesentinel.xyz/code](https://oraclesentinel.xyz/code)
+- **Sentinel Code:** [code.oraclesentinel.xyz](https://code.oraclesentinel.xyz)
 - **Twitter:** [@oracle_sentinel](https://x.com/oracle_sentinel)
 - **Telegram:** [t.me/oraclesentinelsignals](https://t.me/oraclesentinelsignals)
 
@@ -414,7 +414,7 @@ sentinel-code/
 
 ## Contributing
 
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions welcome! Feel free to open issues or pull requests.
 
 ## License
 
