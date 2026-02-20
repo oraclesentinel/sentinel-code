@@ -19,8 +19,15 @@ from database import db
 from report_generator import report_generator
 from webhook_service import webhook_service
 
+# x402 PayAI Payment Handler
+from x402_handler import init_x402, get_x402_info, get_payment_requirements, verify_and_settle_payment
+from rate_limiter import rate_limiter, get_client_ip
+
 app = Flask(__name__)
 CORS(app)
+
+# Setup x402 PayAI payment middleware
+init_x402()
 
 analyzer = CodeAnalyzer()
 github = GitHubUtils()
@@ -37,7 +44,7 @@ def health():
     return jsonify({
         "status": "ok",
         "service": "sentinel-code",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "features": [
             "general_security_analysis",
             "solana_vulnerability_detection",
@@ -48,9 +55,11 @@ def health():
             "scan_history",
             "pdf_markdown_reports",
             "webhook_notifications",
-            "scan_comparison"
+            "scan_comparison",
+            "x402_paid_scan"
         ],
-        "cache_stats": cache_stats
+        "cache_stats": cache_stats,
+        "x402": get_x402_info()
     })
 
 # =============================================================================
@@ -91,6 +100,53 @@ def analyze_repo():
         }
     """
     try:
+        # Rate limit check for free tier
+        client_ip = get_client_ip(request)
+        allowed, remaining, reset_in = rate_limiter.is_allowed(client_ip)
+        
+        # Check for x402 payment header
+        payment_header = request.headers.get('X-PAYMENT')
+        
+        if not allowed and not payment_header:
+            # No quota left and no payment - return 402 with payment requirements
+            import base64
+            import json
+            payment_req = get_payment_requirements()
+            payment_req_encoded = base64.b64encode(json.dumps(payment_req).encode()).decode()
+            
+            response = jsonify({
+                "error": "Free tier exhausted. Payment required for additional scans.",
+                "rate_limit": {
+                    "limit": 3,
+                    "remaining": 0,
+                    "reset_in_seconds": reset_in,
+                    "reset_in_hours": round(reset_in / 3600, 1)
+                },
+                "x402": {
+                    "price": "$0.01 USDC",
+                    "network": "solana-mainnet",
+                    "instruction": "Add X-PAYMENT header with signed payment to continue"
+                }
+            })
+            response.headers['PAYMENT-REQUIRED'] = payment_req_encoded
+            return response, 402
+        
+        # If payment provided, verify and settle
+        is_paid_scan = False
+        if payment_header and not allowed:
+            print(f"[x402] Verifying payment from {client_ip}...")
+            payment_result = verify_and_settle_payment(payment_header)
+            
+            if not payment_result.get('success'):
+                return jsonify({
+                    "error": "Payment verification failed",
+                    "reason": payment_result.get('error')
+                }), 402
+            
+            print(f"[x402] Payment verified! Payer: {payment_result.get('payer')}")
+            is_paid_scan = True
+
+
         data = request.get_json()
 
         if not data or 'repo_url' not in data:
@@ -131,6 +187,9 @@ def analyze_repo():
         # Save to history
         scan_id = db.save_scan_history(repo_url, result)
         result['scan_id'] = scan_id
+        
+        # Record successful scan for rate limiting
+        rate_limiter.record_request(client_ip)
         print(f"[Server] Saved as scan #{scan_id}")
 
         # Cache result
@@ -515,6 +574,38 @@ def list_vulnerabilities():
 # =============================================================================
 # MAIN
 # =============================================================================
+
+# =============================================================================
+# =============================================================================
+# RATE LIMIT STATUS
+# =============================================================================
+
+@app.route('/api/code/rate-limit', methods=['GET'])
+def get_rate_limit_status():
+    """
+    Get current rate limit status for the requesting IP.
+    
+    Response:
+        {
+            "ip": "x.x.x.x",
+            "used": 2,
+            "remaining": 1,
+            "limit": 3,
+            "reset_in_seconds": 3600,
+            "window_hours": 24,
+            "x402_info": "Add X-PAYMENT header after free tier exhausted"
+        }
+    """
+    client_ip = get_client_ip(request)
+    usage = rate_limiter.get_usage(client_ip)
+    usage["ip"] = client_ip
+    usage["x402_alternative"] = {
+        "endpoint": "/api/code/analyze",
+        "price": "$0.01 USDC",
+        "network": "solana-mainnet",
+        "benefit": "After free tier, add X-PAYMENT header for unlimited scans"
+    }
+    return jsonify(usage)
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8100))

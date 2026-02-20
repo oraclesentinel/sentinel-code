@@ -4,7 +4,7 @@
 
 Part of [Oracle Sentinel](https://oraclesentinel.xyz) Intelligence Layer
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/oraclesentinel/sentinel-code)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/oraclesentinel/sentinel-code)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## Overview
@@ -21,6 +21,52 @@ Sentinel Code is a specialized security scanner that uses AI to detect vulnerabi
 - **Scan History** - Track security improvements over time
 - **PDF/Markdown Reports** - Professional audit reports
 - **Webhook Notifications** - CI/CD integration support
+- **x402 Micropayments** - Pay-per-scan after free tier (Solana/USDC)
+
+
+## Rate Limiting & x402 Payment
+
+Sentinel Code uses a **freemium model** with x402 micropayments:
+
+| Tier | Limit | Price |
+|------|-------|-------|
+| **Free** | 3 scans per day (per IP) | $0 |
+| **Paid** | Unlimited | $0.01 USDC per scan |
+
+### How It Works
+
+1. **First 3 scans** - Free, no payment required
+2. **After limit reached** - API returns `402 Payment Required`
+3. **To continue** - Add `X-PAYMENT` header with x402 payment
+4. **Unlimited access** - Pay $0.01 USDC (Solana) per scan
+
+### x402 Payment Details
+
+| Field | Value |
+|-------|-------|
+| Network | Solana Mainnet |
+| Asset | USDC |
+| Amount | $0.01 (10000 base units) |
+| Wallet | `FHoDf2HHcKxs7WkVGiYzxSVscDLHbfhGzUqDLw7qqdCt` |
+| Protocol | [x402 by PayAI](https://docs.payai.network) |
+
+### Check Your Rate Limit
+```bash
+curl https://code.oraclesentinel.xyz/api/code/rate-limit
+```
+
+**Response:**
+```json
+{
+  "ip": "x.x.x.x",
+  "used": 2,
+  "remaining": 1,
+  "limit": 3,
+  "reset_in_seconds": 86400,
+  "window_hours": 24
+}
+```
+
 
 ## Try It
 
@@ -119,9 +165,26 @@ GET /health
 {
   "status": "ok",
   "service": "sentinel-code",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "features": ["solana_vulnerability_detection", "defi_protocol_analysis", ...],
   "cache_stats": {"active_entries": 5, "total_hits": 42}
+}
+```
+
+#### Check Rate Limit
+```
+GET /rate-limit
+```
+
+**Response:**
+```json
+{
+  "ip": "x.x.x.x",
+  "used": 2,
+  "remaining": 1,
+  "limit": 3,
+  "reset_in_seconds": 86400,
+  "window_hours": 24
 }
 ```
 
@@ -129,6 +192,8 @@ GET /health
 ```
 POST /analyze
 ```
+
+> **Rate Limited:** Free tier allows 3 scans/day per IP. After limit, returns `402 Payment Required`. See [Rate Limiting & x402 Payment](#rate-limiting--x402-payment).
 
 **Request:**
 ```json
